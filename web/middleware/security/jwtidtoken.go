@@ -2,6 +2,8 @@ package security
 
 import (
 	"crypto/rsa"
+	"errors"
+	"fmt"
 	"github.com/go-http-utils/headers"
 	"github.com/golang-jwt/jwt/v4"
 	"net/http"
@@ -54,6 +56,10 @@ func JwtIdTokenValidatorMiddleware(options JwtIdTokenValidatorMiddlewareOptions)
 					}
 					if err != nil {
 						errorMessage = err.Error()
+						var vErr *jwt.ValidationError
+						if errors.As(err, &vErr) {
+							errorMessage = fmt.Sprintf("%s: %d", errorMessage, vErr.Errors)
+						}
 					} else if !token.Valid {
 						errorMessage = "token parsed but invalid"
 					}
