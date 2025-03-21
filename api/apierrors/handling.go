@@ -3,6 +3,7 @@ package apierrors
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/Interhyp/go-backend-service-common/api"
 	"github.com/Interhyp/go-backend-service-common/web/util/media"
 	aulogging "github.com/StephanHCB/go-autumn-logging"
@@ -31,6 +32,15 @@ func HandleError(ctx context.Context, w http.ResponseWriter, r *http.Request, er
 				return
 			}
 		}
+	} else if r.Context().Err() == context.Canceled {
+		w.WriteHeader(http.StatusRequestTimeout)
+		if err != nil {
+			detailedMessage := fmt.Sprintf("Request canceled, details: %s", err.Error())
+			aulogging.Logger.Ctx(r.Context()).Warn().Print(detailedMessage)
+		} else {
+			aulogging.Logger.Ctx(r.Context()).Warn().Print("Request canceled")
+		}
+		return
 	}
 	// ensure 500 if a handler throws a type of error not documented in the OpenAPI spec
 	unexpectedErrorHandler(ctx, w, r, err)
