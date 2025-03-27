@@ -11,31 +11,34 @@ import (
 )
 
 var (
-	RequestCounterName  = "http_server_requests_seconds_count"
-	RequestDurationName = "http_server_requests_seconds_sum"
+	requestSummaryName       = "http_server_requests_seconds"
+	requestSummaryLegacyName = "http_server_requests_seconds_sum"
 
-	reqs    *prometheus.CounterVec
-	latency *prometheus.SummaryVec
+	requestSummary       *prometheus.SummaryVec
+	requestSummaryLegacy *prometheus.SummaryVec
 )
 
 func Setup() {
-	reqs = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: RequestCounterName,
-			Help: "Number of incoming HTTP requests processed, partitioned by status code, method and HTTP path (grouped by patterns).",
-		},
-		[]string{"method", "outcome", "status", "uri"},
-	)
-	prometheus.MustRegister(reqs)
-
-	latency = prometheus.NewSummaryVec(
+	requestSummary = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
-			Name: RequestDurationName,
-			Help: "How long it took to process requests, partitioned by status code, method and HTTP path (grouped by patterns).",
+			Name:       requestSummaryName,
+			Help:       "Request counts, durations, accumulated and in quantiles, partitioned by method, \"outcome\", status code, and HTTP path (grouped by patterns).",
+			Objectives: map[float64]float64{0.5: 0.05, 0.95: 0.01, 0.99: 0.001},
 		},
 		[]string{"method", "outcome", "status", "uri"},
 	)
-	prometheus.MustRegister(latency)
+
+	prometheus.MustRegister(requestSummaryLegacy)
+
+	requestSummaryLegacy = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name: requestSummaryLegacyName,
+			Help: "(Legacy, replaced by \"http_server_requests_seconds(_sum|_count)?\") Accumulated request durations and counts partitioned by method, \"outcome\", status code, and HTTP path (grouped by patterns).",
+		},
+		[]string{"method", "outcome", "status", "uri"},
+	)
+
+	prometheus.MustRegister(requestSummary)
 }
 
 func RecordRequestMetrics(next http.Handler) http.Handler {
@@ -43,13 +46,14 @@ func RecordRequestMetrics(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
+		duration := time.Since(start)
 
 		rctx := chi.RouteContext(r.Context())
 		routePattern := strings.Join(rctx.RoutePatterns, "")
 		routePattern = strings.Replace(routePattern, "/*/", "/", -1)
 
-		reqs.WithLabelValues(r.Method, outcome(ww.Status()), fmt.Sprintf("%d", ww.Status()), routePattern).Inc()
-		latency.WithLabelValues(r.Method, outcome(ww.Status()), fmt.Sprintf("%d", ww.Status()), routePattern).Observe(float64(time.Since(start).Microseconds()) / 1000000)
+		requestSummary.WithLabelValues(r.Method, outcome(ww.Status()), fmt.Sprintf("%d", ww.Status()), routePattern).Observe(duration.Seconds())
+		requestSummaryLegacy.WithLabelValues(r.Method, outcome(ww.Status()), fmt.Sprintf("%d", ww.Status()), routePattern).Observe(duration.Seconds())
 	}
 	return http.HandlerFunc(fn)
 }
