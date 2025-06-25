@@ -16,9 +16,11 @@ import (
 	"strings"
 )
 
-type SwaggerCtlImpl struct{}
+type SwaggerCtlImpl struct {
+	additionalSpecFiles []controller.SpecFile
+}
 
-func (c *SwaggerCtlImpl) WireUp(ctx context.Context, router chi.Router, additionalSpecFiles ...controller.SpecFile) {
+func (c *SwaggerCtlImpl) WireUp(ctx context.Context, router chi.Router) {
 	// 	serve swagger-ui and openapi spec json (which needs to be in the file system of your container)
 	c.AddStaticHttpFilesystemRoute(router, auwebswaggerui.Assets, "/swagger-ui")
 	openApiSpecFile, fileFindError := c.GetFirstMatchingServableFile([]string{"docs", "api"}, regexp.MustCompile(`openapi-v3-spec\.(json|yaml)`))
@@ -29,7 +31,7 @@ func (c *SwaggerCtlImpl) WireUp(ctx context.Context, router chi.Router, addition
 		aulogging.Logger.NoCtx().Error().Printf("failed to read openAPI spec file %s/%s. OpenAPI spec will be unavailable.", openApiSpecFile.RelativeFilesystemPath, openApiSpecFile.FileName)
 	}
 
-	for _, additionalFile := range additionalSpecFiles {
+	for _, additionalFile := range c.additionalSpecFiles {
 		if err := c.AddStaticFileRoute(router, additionalFile); fileFindError == nil && err != nil {
 			aulogging.Logger.NoCtx().Error().Printf("failed to read spec file %s/%s. OpenAPI spec will be broken.", additionalFile.RelativeFilesystemPath, additionalFile.FileName)
 		}

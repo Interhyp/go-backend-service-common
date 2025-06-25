@@ -11,7 +11,7 @@ const SwaggerControllerAcornName = "swaggerctl"
 type SwaggerController interface {
 	IsSwaggerController() bool
 
-	WireUp(ctx context.Context, router chi.Router, additionalSpecFiles ...SpecFile)
+	WireUp(ctx context.Context, router chi.Router)
 }
 
 // SpecFile describes an OpenApi spec file served by this controller.
