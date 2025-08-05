@@ -3,14 +3,15 @@ package requestlogging
 
 import (
 	"fmt"
+	"net/http"
+	"regexp"
+	"time"
+
 	"github.com/Interhyp/go-backend-service-common/web/middleware/requestid"
 	aulogging "github.com/StephanHCB/go-autumn-logging"
 	auzerolog "github.com/StephanHCB/go-autumn-logging-zerolog"
 	auloggingapi "github.com/StephanHCB/go-autumn-logging/api"
 	"github.com/go-chi/chi/v5/middleware"
-	"net/http"
-	"regexp"
-	"time"
 )
 
 type Options struct {
