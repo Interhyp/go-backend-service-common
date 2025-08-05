@@ -3,11 +3,12 @@ package healthctl
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+
 	"github.com/Interhyp/go-backend-service-common/api"
 	"github.com/Interhyp/go-backend-service-common/web/util/media"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-http-utils/headers"
-	"net/http"
 )
 
 type HealthCtlImpl struct{}
