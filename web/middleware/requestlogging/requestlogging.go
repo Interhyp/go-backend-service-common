@@ -85,8 +85,6 @@ type zerologLogEntry struct {
 }
 
 func (l *zerologLogEntry) Write(status, bytes int, header http.Header, elapsed time.Duration, extra interface{}) {
-	msg := "request"
-
 	requestInfo := fmt.Sprintf("%s %s %d", l.method, l.path, status)
 	for _, re := range l.excludeRegexes {
 		if re.MatchString(requestInfo) {
@@ -95,25 +93,22 @@ func (l *zerologLogEntry) Write(status, bytes int, header http.Header, elapsed t
 	}
 
 	ctxLogger := aulogging.Logger.Ctx(l.request.Context())
-	var e auloggingapi.LeveledLoggingImplementation
+	var leveledLogger auloggingapi.LeveledLoggingImplementation
 	switch {
 	case status >= http.StatusInternalServerError:
-		e = ctxLogger.Error()
+		leveledLogger = ctxLogger.Error()
 	default:
-		e = ctxLogger.Info()
+		leveledLogger = ctxLogger.Info()
 	}
 
+	msg := fmt.Sprintf("request %s %s -> %d (%d μs)", l.method, l.path, status, elapsed.Microseconds())
 	if auzerolog.IsJson {
-		e.With(StatusCodeFieldName, fmt.Sprintf("%d", status)).
+		leveledLogger = leveledLogger.With(StatusCodeFieldName, fmt.Sprintf("%d", status)).
 			With(ResponseLatencyMicrosFieldName, fmt.Sprintf("%d", elapsed.Microseconds())).
 			With(UserAgentFieldName, l.userAgent).
-			With(LoggerNameFieldName, "request.incoming").
-			Print(msg)
-	} else {
-		// console friendly version
-		msg = fmt.Sprintf("request %s %s -> %d (%d μs)", l.method, l.path, status, elapsed.Microseconds())
-		e.Print(msg)
+			With(LoggerNameFieldName, "request.incoming")
 	}
+	leveledLogger.Print(msg)
 }
 
 func (l *zerologLogEntry) Panic(v interface{}, stack []byte) {
