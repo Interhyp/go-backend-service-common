@@ -4,10 +4,11 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"github.com/go-http-utils/headers"
-	"github.com/golang-jwt/jwt/v4"
 	"net/http"
 	"strings"
+
+	"github.com/go-http-utils/headers"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 type JwtIdTokenValidatorMiddlewareOptions struct {
@@ -42,34 +43,80 @@ func JwtIdTokenValidatorMiddleware(options JwtIdTokenValidatorMiddlewareOptions)
 				ctx := r.Context()
 				tokenString := strings.TrimSpace(strings.TrimPrefix(authHeaderValue, bearerPrefix))
 
-				errorMessage := ""
-				for _, key := range options.PublicKeys {
-					claims := AllClaims{}
-					token, err := jwt.ParseWithClaims(tokenString, &claims, keyFuncForKey(key), jwt.WithValidMethods([]string{"RS256"}))
-					if err == nil && token.Valid {
-						parsedClaims := token.Claims.(*AllClaims)
-
-						ctx = PutRawToken(ctx, token.Raw)
-						ctx = PutClaims(ctx, parsedClaims)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
-					if err != nil {
-						errorMessage = err.Error()
-						var vErr *jwt.ValidationError
-						if errors.As(err, &vErr) {
-							errorMessage = fmt.Sprintf("%s: %d", errorMessage, vErr.Errors)
-						}
-					} else if !token.Valid {
-						errorMessage = "token parsed but invalid"
-					}
+				claims, err := validateToken(tokenString, options.PublicKeys)
+				if err != nil {
+					unauthorizedErrorHandler(ctx, w, r, describeTokenError(err), Now())
+					return
 				}
-				unauthorizedErrorHandler(ctx, w, r, errorMessage, Now())
+
+				ctx = PutRawToken(ctx, tokenString)
+				ctx = PutClaims(ctx, claims)
+				next.ServeHTTP(w, r.WithContext(ctx))
 			}
 		}
 		return http.HandlerFunc(fn)
 	}
 	return mw
+}
+
+func validateToken(tokenString string, keys []*rsa.PublicKey) (*AllClaims, error) {
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("%w: no public keys configured", jwt.ErrTokenUnverifiable)
+	}
+
+	var mostRelevantErr error
+	for _, key := range keys {
+		claims, err := validateTokenWithKey(tokenString, key)
+		if err == nil {
+			return claims, nil
+		}
+		// an error from a key whose signature matched (e.g. expired) is more relevant than a signature mismatch
+		if mostRelevantErr == nil || (isSignatureError(mostRelevantErr) && !isSignatureError(err)) {
+			mostRelevantErr = err
+		}
+	}
+	return nil, mostRelevantErr
+}
+
+func validateTokenWithKey(tokenString string, key *rsa.PublicKey) (*AllClaims, error) {
+	claims := &AllClaims{}
+	token, err := jwt.ParseWithClaims(tokenString, claims, keyFuncForKey(key), jwt.WithValidMethods([]string{"RS256"}))
+	if err != nil {
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, errors.New("token parsed but invalid")
+	}
+	return claims, nil
+}
+
+func isSignatureError(err error) bool {
+	return errors.Is(err, jwt.ErrTokenSignatureInvalid)
+}
+
+var describedTokenErrors = []error{
+	jwt.ErrTokenMalformed,
+	jwt.ErrTokenUnverifiable,
+	jwt.ErrTokenSignatureInvalid,
+	jwt.ErrTokenExpired,
+	jwt.ErrTokenNotValidYet,
+	jwt.ErrTokenUsedBeforeIssued,
+	jwt.ErrTokenInvalidClaims,
+}
+
+// describeTokenError makes sure the message names the kind of failure, e.g.
+// "token signature is invalid: crypto/rsa: verification error" instead of just "crypto/rsa: verification error"
+func describeTokenError(err error) string {
+	message := err.Error()
+	for _, kind := range describedTokenErrors {
+		if errors.Is(err, kind) {
+			if strings.HasPrefix(message, kind.Error()) {
+				return message
+			}
+			return fmt.Sprintf("%s: %s", kind.Error(), message)
+		}
+	}
+	return message
 }
 
 func keyFuncForKey(rsaPublicKey *rsa.PublicKey) func(token *jwt.Token) (interface{}, error) {
